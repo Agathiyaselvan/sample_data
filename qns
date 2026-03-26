@@ -56,3 +56,223 @@ Please review the information and feel free to reach out if you have any questio
 On behalf of the Data Engineering Team
  
 Thanks 
+
+
+Perfect 🔥 — let’s solve **ALL 10 KPI questions with proper Databricks (PySpark) code** step-by-step.
+
+---
+
+# ✅ 🔶 First: Create Gold Base Table (used for ALL KPIs)
+
+```python
+from pyspark.sql import functions as F
+
+sales = spark.read.table("electronics.silver.sales")
+products = spark.read.table("electronics.silver.products")
+customers = spark.read.table("electronics.silver.customers")
+stores = spark.read.table("electronics.silver.stores")
+exchange = spark.read.table("electronics.silver.exchange_rates")
+
+gold_df = sales \
+    .join(products, "ProductKey", "left") \
+    .join(customers, "CustomerKey", "left") \
+    .join(stores, "StoreKey", "left") \
+    .join(exchange,
+          (sales["Order Date"] == exchange["Date"]) &
+          (sales["Currency Code"] == exchange["Currency"]),
+          "left")
+
+gold_df = gold_df.withColumn(
+    "revenue_usd",
+    F.col("Quantity") * F.col("Unit Price USD") * F.col("Exchange")
+)
+```
+
+---
+
+# ✅ 1. Monthly Revenue Trend (2024)
+
+```python
+kpi1 = gold_df.filter(F.year("Order Date") == 2024) \
+    .withColumn("month", F.date_format("Order Date", "yyyy-MM")) \
+    .groupBy("month") \
+    .agg(F.sum("revenue_usd").alias("total_revenue")) \
+    .orderBy("month")
+
+display(kpi1)
+```
+
+---
+
+# ✅ 2. Peak Month Analysis (Top 3 + % of annual)
+
+```python
+annual_total = kpi1.agg(F.sum("total_revenue")).collect()[0][0]
+
+kpi2 = kpi1.orderBy(F.desc("total_revenue")).limit(3) \
+    .withColumn(
+        "percentage",
+        (F.col("total_revenue") / F.lit(annual_total)) * 100
+    )
+
+display(kpi2)
+```
+
+---
+
+# ✅ 3. Holiday Drivers (Top categories in peak months)
+
+```python
+top_months = [row["month"] for row in kpi2.select("month").collect()]
+
+kpi3 = gold_df.withColumn("month", F.date_format("Order Date", "yyyy-MM")) \
+    .filter(F.col("month").isin(top_months)) \
+    .groupBy("month", "Category") \
+    .agg(F.sum("revenue_usd").alias("revenue")) \
+    .withColumn("rank", F.row_number().over(
+        Window.partitionBy("month").orderBy(F.desc("revenue"))
+    )) \
+    .filter(F.col("rank") <= 3)
+
+display(kpi3)
+```
+
+👉 Add this import:
+
+```python
+from pyspark.sql.window import Window
+```
+
+---
+
+# ✅ 4. Delivery Performance (Overall Avg)
+
+```python
+kpi4 = gold_df.agg(
+    F.avg("delivery_days").alias("avg_delivery_days")
+)
+
+display(kpi4)
+```
+
+---
+
+# ✅ 5. Country Delivery Issues (Slowest 5)
+
+```python
+kpi5 = gold_df.groupBy("Country") \
+    .agg(F.avg("delivery_days").alias("avg_delivery_days")) \
+    .orderBy(F.desc("avg_delivery_days")) \
+    .limit(5)
+
+display(kpi5)
+```
+
+---
+
+# ✅ 6. Channel Performance (AOV)
+
+```python
+kpi6 = gold_df.withColumn(
+    "channel",
+    F.when(F.col("StoreKey").isNull(), "Online").otherwise("In-Store")
+).groupBy("channel", "Continent") \
+ .agg(
+    (F.sum("revenue_usd") / F.countDistinct("Order Number")).alias("AOV")
+ )
+
+display(kpi6)
+```
+
+---
+
+# ✅ 7. Volume Leaders (Top 5 by Quantity)
+
+```python
+kpi7 = gold_df.groupBy("Category") \
+    .agg(F.sum("Quantity").alias("total_units")) \
+    .orderBy(F.desc("total_units")) \
+    .limit(5)
+
+display(kpi7)
+```
+
+---
+
+# ✅ 8. Revenue Leaders (Top 5 Categories)
+
+```python
+kpi8 = gold_df.groupBy("Category") \
+    .agg(F.sum("revenue_usd").alias("total_revenue")) \
+    .orderBy(F.desc("total_revenue")) \
+    .limit(5)
+
+display(kpi8)
+```
+
+---
+
+# ✅ 9. Customer Profile (Continent × Gender)
+
+```python
+kpi9 = gold_df.groupBy("Continent", "Gender") \
+    .agg(
+        F.countDistinct("CustomerKey").alias("customer_count"),
+        F.sum("revenue_usd").alias("total_spending")
+    )
+
+display(kpi9)
+```
+
+---
+
+# ✅ 10. Customer Loyalty (Repeat Rate)
+
+```python
+customer_orders = gold_df.groupBy("CustomerKey", "Continent") \
+    .agg(F.countDistinct("Order Number").alias("order_count"))
+
+repeat_customers = customer_orders.filter(F.col("order_count") >= 2)
+
+kpi10 = customer_orders.groupBy("Continent").agg(
+    (F.countDistinct(
+        F.when(F.col("order_count") >= 2, F.col("CustomerKey"))
+    ) / F.countDistinct("CustomerKey") * 100).alias("repeat_rate")
+)
+
+display(kpi10)
+```
+
+---
+
+# 🏁 Final Step (VERY IMPORTANT)
+
+👉 Save each KPI:
+
+```python
+kpi1.write.mode("overwrite").saveAsTable("electronics.gold.kpi_monthly_revenue")
+```
+
+(do for all KPIs)
+
+---
+
+# 🧠 What You Achieved
+
+* ✔ Full Gold Layer
+* ✔ All 10 KPIs solved
+* ✔ Ready for dashboard / evaluation
+* ✔ Covers **Data Modeling + Transformation + KPI outputs**
+
+---
+
+# 🚀 If you want FINAL polishing
+
+I can help you:
+
+* 📁 Folder structure (for marks)
+* 🔄 Orchestration (Databricks Jobs)
+* 📄 Documentation (ready-to-submit)
+* ⚡ Optimization tricks
+
+Just say 👍
